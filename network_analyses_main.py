@@ -21,39 +21,74 @@ warnings.filterwarnings('ignore')
 
 # %% functions
 # the function to calculate connectivity matrix
-def conn_cal(epochs, condition, projected):
-    if projected is True:
-        label_ts = np.load("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epochs + "src_data_" + condition + "_clean_flip.npy")
-    elif projected is False:
-        label_ts = np.load("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epochs + "src_data_" + condition + "_clean.npy")
-        label_ts = np.swapaxes(label_ts, 0, 1)
-        # remove the last brain area that corresponds to unknown
-        label_ts = np.delete(label_ts, (-1), axis=1)
+def conn_cal(epochs, beh, exp_cond, projected):
+    mat_all = []
+    for cnt_sub in range(len(epochs)):
+        # %% load the behavioral data
+        dat = fromFile("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + beh[cnt_sub])
+        block_mode = int(dat.extraInfo["block_mode"])
+        if exp_cond == "vis_train":
+            if block_mode == 1 or block_mode == 2:
+                condition = "first_train"
+            elif block_mode == 3 or block_mode == 4:
+                condition = "second_train"
+        elif exp_cond == "vis_test":
+            if block_mode == 1 or block_mode == 2:
+                condition = "first_test"
+            elif block_mode == 3 or block_mode == 4:
+                condition = "second_test"
+        elif exp_cond == "stim_train":
+            if block_mode == 1 or block_mode == 2:
+                condition = "second_train"
+            elif block_mode == 3 or block_mode == 4:
+                condition = "first_train"
+        elif exp_cond == "stim_test":
+            if block_mode == 1 or block_mode == 2:
+                condition = "second_test"
+            elif block_mode == 3 or block_mode == 4:
+                condition = "first_test"
+        elif exp_cond == "both_train":
+            condition = "third_train"
+
+        if projected is True:
+            label_ts = np.load("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epochs[cnt_sub] + "src_data_" + condition + "_clean_flip.npy")
+        elif projected is False:
+            label_ts = np.load("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epochs[cnt_sub] + "src_data_" + condition + "_clean.npy")
+            label_ts = np.swapaxes(label_ts, 0, 1)
+            # remove the last brain area that corresponds to unknown
+            label_ts = np.delete(label_ts, (-1), axis=1)
+
+        if condition == "first_train" or condition == "second_train" or condition == "third_train":
+            tmax_var = 8
+        else:
+            tmax_var = 6
+
+        con = spectral_connectivity_epochs(label_ts,
+                                           method=con_methods,
+                                           mode='multitaper',
+                                           sfreq=sfreq, fmin=fmin, fmax=fmax,
+                                           tmin=2, tmax=tmax_var,  # we don't want the first two seconds, because they were baseline
+                                           faverage=True,
+                                           mt_adaptive=True,
+                                           n_jobs=16)
+
+        # con is a 3D array, get the connectivity for the first (and only) freq. band
+        # for each method
+        con_res = dict()
+        con_res = con.get_data(output='dense')[:, :, 0]
+
+        # make the matrix symmetrical
+        matrix = con_res + con_res.T - np.diag(np.diag(con_res))
+        mat_all.append(matrix)
+
+    mat_all = np.asarray(mat_all)
+    avg_mat_all = np.nanmean(mat_all, axis=0)
+    return mat_all, avg_mat_all
 
 
-
-    if condition == "first_train" or  condition == "second_train" or condition == "third_train":
-        tmax_var = 8
-    else:
-        tmax_var = 6
-
-    con = spectral_connectivity_epochs(label_ts,
-                                       method=con_methods,
-                                       mode='multitaper',
-                                       sfreq=sfreq, fmin=fmin, fmax=fmax,
-                                       tmin=2, tmax=tmax_var,  # we don't want the first two seconds, because they were baseline
-                                       faverage=True,
-                                       mt_adaptive=True,
-                                       n_jobs=16)
-
-    # con is a 3D array, get the connectivity for the first (and only) freq. band
-    # for each method
-    con_res = dict()
-    con_res = con.get_data(output='dense')[:, :, 0]
-
-    # make the matrix symmetrical
-    matrix = con_res + con_res.T - np.diag(np.diag(con_res))
-
+# the function calculates graph theory mesures
+def graph_meas(matrix, plot_figs):
+    measures = {}
     # Obtaining name of areas according to matching file
     lineList = [line.rstrip('\n') for line in
                 open('./1000_Functional_Connectomes/Region Names/region_names_abbrev_file_MR.txt')]
@@ -79,10 +114,12 @@ def conn_cal(epochs, condition, projected):
     mask = np.zeros_like(Pdmatrix.values, dtype=bool)
     mask[np.triu_indices_from(mask)] = True
 
-    plt.figure(figsize=(20, 20))
-    _ = sns.heatmap(Pdmatrix, cmap='coolwarm', cbar=True, square=False,
-                    mask=None)  # To apply the mask, change to mask=mask
-    plt.show()
+    if plot_figs:
+
+        plt.figure(figsize=(20, 20))
+        _ = sns.heatmap(Pdmatrix, cmap='coolwarm', cbar=True, square=False,
+                        mask=None)  # To apply the mask, change to mask=mask
+        plt.show()
 
     # Absolutise for further user
     matrix = abs(matrix)
@@ -91,16 +128,18 @@ def conn_cal(epochs, condition, projected):
     # Weight distribution plot
     bins = np.arange(np.sqrt(len(np.concatenate(matrix))))
     bins = (bins - np.min(bins)) / np.ptp(bins)
-    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    if plot_figs:
+        fig, axes = plt.subplots(1, 2, figsize=(15, 5))
 
-    # Distribution of raw weights
-    rawdist = sns.distplot(matrixdiagNaN.flatten(), bins=bins, kde=False, ax=axes[0], norm_hist=True)
-    rawdist.set(xlabel='Correlation Values', ylabel='Density Frequency')
+        # Distribution of raw weights
+        rawdist = sns.distplot(matrixdiagNaN.flatten(), bins=bins, kde=False, ax=axes[0], norm_hist=True)
+        rawdist.set(xlabel='Correlation Values', ylabel='Density Frequency')
 
-    # Probability density of log10
-    log10dist = sns.distplot(np.log10(matrixdiagNaN).flatten(), kde=False, ax=axes[1], norm_hist=True)
-    log10dist.set(xlabel='log(weights)')
-    plt.show()
+        # Probability density of log10
+
+        log10dist = sns.distplot(np.log10(matrixdiagNaN).flatten(), kde=False, ax=axes[1], norm_hist=True)
+        log10dist.set(xlabel='log(weights)')
+        plt.show()
 
     # Creating a graph
     G = nx.from_numpy_matrix(matrix)
@@ -131,7 +170,8 @@ def conn_cal(epochs, condition, projected):
     names = ['All-To-All', '> 0.15', '> 0.2']
     values = [alltoall, st50, st25]
 
-    dict(zip(names, values))
+    dens_dict = dict(zip(names, values))
+    measures["density"] = dens_dict
 
     ##### Now, we compute the nodal degree/strength.
     # Computation of nodal degree/strength
@@ -149,6 +189,7 @@ def conn_cal(epochs, condition, projected):
     normstrengthlist = np.array([val * 1 / (len(G.nodes) - 1) for (node, val) in strength])
     mean_degree = np.sum(normstrengthlist) / len(G.nodes)
     print(mean_degree)
+    measures["mean_degree"] = mean_degree
 
     ##### Next, we will compute the centralities!
     # Closeness centrality
@@ -170,27 +211,27 @@ def conn_cal(epochs, condition, projected):
     # Visualise  values directly
     # print(closeness)
 
-    # Closeness Centrality Histogram
-    sns.distplot(list(closeness.values()), kde=False, norm_hist=False)
-    plt.xlabel('Centrality Values')
-    plt.ylabel('Counts')
-    plt.show()
+    # # Closeness Centrality Histogram
+    # sns.distplot(list(closeness.values()), kde=False, norm_hist=False)
+    # plt.xlabel('Centrality Values')
+    # plt.ylabel('Counts')
+    # plt.show()
 
     # Betweenness centrality:
     # print(nx.betweenness_centrality.__doc__)
     betweenness = nx.betweenness_centrality(G, weight='distance', normalized=True)
 
     # Now we add the it as an attribute to the nodes
-    # nx.set_node_attributes(G, betweenness, 'bc')
+    nx.set_node_attributes(G, betweenness, 'bc')
 
     # Visualise  values directly
     # print(betweenness)
 
-    # Betweenness centrality Histogram
-    sns.distplot(list(betweenness.values()), kde=False, norm_hist=False)
-    plt.xlabel('Centrality Values')
-    plt.ylabel('Counts')
-    plt.show()
+    # # Betweenness centrality Histogram
+    # sns.distplot(list(betweenness.values()), kde=False, norm_hist=False)
+    # plt.xlabel('Centrality Values')
+    # plt.ylabel('Counts')
+    # plt.show()
 
     # Eigenvector centrality
     # print(nx.eigenvector_centrality.__doc__)
@@ -202,11 +243,11 @@ def conn_cal(epochs, condition, projected):
     # Visualise  values directly
     # print(eigen)
 
-    # Eigenvector centrality Histogram
-    sns.distplot(list(eigen.values()), kde=False, norm_hist=False)
-    plt.xlabel('Centrality Values')
-    plt.ylabel('Counts')
-    plt.show()
+    # # Eigenvector centrality Histogram
+    # sns.distplot(list(eigen.values()), kde=False, norm_hist=False)
+    # plt.xlabel('Centrality Values')
+    # plt.ylabel('Counts')
+    # plt.show()
 
     # Page Rank
     # print(nx.pagerank.__doc__)
@@ -218,42 +259,42 @@ def conn_cal(epochs, condition, projected):
     # Visualise values directly
     # print(pagerank)
 
-    # Page Rank Histogram
-    sns.distplot(list(pagerank.values()), kde=False, norm_hist=False)
-    plt.xlabel('Pagerank Values')
-    plt.ylabel('Counts')
-    plt.show()
+    # # Page Rank Histogram
+    # sns.distplot(list(pagerank.values()), kde=False, norm_hist=False)
+    # plt.xlabel('Pagerank Values')
+    # plt.ylabel('Counts')
+    # plt.show()
 
     ##### Now, let's move on to the Path Length!
     # Path Length
     # print(nx.shortest_path_length.__doc__)
 
     # This is a versatile version of the ones below in which one can define or not source and target. Remove the hashtag to use this version.
-    # list(nx.shortest_path_length(G, weight='distance'))
 
-    # This one can also be used if defining source and target:
-    # print(nx.dijkstra_path_length.__doc__)
-    nx.dijkstra_path_length(G, source=20, target=25, weight='distance')
-
-    # Whereas this one is for all pairs. Remove the hashtag to use this version.
-    # print(nx.all_pairs_dijkstra_path_length.__doc__)
-    list(nx.all_pairs_dijkstra_path_length(G, weight='distance'))
+    measures["shortest_path_length"] = list(nx.shortest_path_length(G, weight='distance'))
+    # # This one can also be used if defining source and target:
+    # # print(nx.dijkstra_path_length.__doc__)
+    # nx.dijkstra_path_length(G, source=45, target=49, weight='distance')
+    #
+    # # Whereas this one is for all pairs. Remove the hashtag to use this version.
+    # # print(nx.all_pairs_dijkstra_path_length.__doc__)
+    # list(nx.all_pairs_dijkstra_path_length(G, weight='distance'))
 
     # Average Path Length or Characteristic Path Length
     # print(nx.average_shortest_path_length.__doc__)
-    nx.average_shortest_path_length(G, weight='distance')
+    measures["average_shortest_path_length"] = nx.average_shortest_path_length(G, weight='distance')
 
     ##### Now, modularity, assortativity, clustering coefficient and the minimum spanning tree!
     # Modularity
     # print(community.best_partition.__doc__)
     # from community import best_partition
     part = community.best_partition(G, weight='weight')
-
+    nx.set_node_attributes(G, part, 'part')
     # Visualise values directly
-    print(part)
+    # print(part)
 
     # Check the number of communities
-    set(part.values()).union()
+    measures["num_partitions"] = len(set(part.values()).union())
 
     # Assortativity
     # print(nx.degree_pearson_correlation_coefficient.__doc__)
@@ -267,18 +308,18 @@ def conn_cal(epochs, condition, projected):
     nx.set_node_attributes(G, clustering, 'cc')
 
     # Visualise values directly
-    # print(clustering)
+    print(clustering)
 
-    # Clustering Coefficient Histogram
-    sns.distplot(list(clustering.values()), kde=False, norm_hist=False)
-    plt.xlabel('Clustering Coefficient Values')
-    plt.ylabel('Counts')
-    plt.show()
+    # # Clustering Coefficient Histogram
+    # sns.distplot(list(clustering.values()), kde=False, norm_hist=False)
+    # plt.xlabel('Clustering Coefficient Values')
+    # plt.ylabel('Counts')
+    # plt.show()
 
     # Average Clustering Coefficient
     # print(nx.clustering.__doc__)
-    nx.average_clustering(G, weight='weight')
 
+    measures["average_clustering"] = nx.average_clustering(G, weight='weight')
     # Minimum Spanning Tree
     GMST = nx.minimum_spanning_tree(G, weight='distance')
 
@@ -294,34 +335,52 @@ def conn_cal(epochs, condition, projected):
     # Add node color numbers
     nx.set_node_attributes(G, Convert(colornumbs), 'colornumb')
 
-    # Standard Network graph with nodes in proportion to Graph degrees
-    plt.figure(figsize=(30, 30))
-    edgewidth = [d['weight'] for (u, v, d) in G.edges(data=True)]
-    pos = nx.spring_layout(G, scale=5)
-    nx.draw(G, pos, with_labels=True, width=np.power(edgewidth, 2), edge_color='grey',
-            node_size=normstrengthlist * 20000,
-            labels=Convert(lineList), font_color='black', node_color=colornumbs / 10, cmap=plt.cm.Spectral, alpha=0.7,
-            font_size=9)
-    plt.show()
+    # # Standard Network graph with nodes in proportion to Graph degrees
+    # plt.figure(figsize=(30, 30))
+    # edgewidth = [d['weight'] for (u, v, d) in G.edges(data=True)]
+    # pos = nx.spring_layout(G, scale=5)
+    # nx.draw(G, pos, with_labels=True, width=np.power(edgewidth, 2), edge_color='grey',
+    #         node_size=normstrengthlist * 20000,
+    #         labels=Convert(lineList), font_color='black', node_color=colornumbs / 10, cmap=plt.cm.Spectral, alpha=0.7,
+    #         font_size=9)
+    # plt.show()
     # plt.savefig('network.jpeg')
 
     # Let's visualise the Minimum Spanning Tree
-    plt.figure(figsize=(15, 15))
-    nx.draw(GMST, with_labels=True, alpha=0.7, font_size=9)
-    plt.show()
+    if plot_figs:
+        plt.figure(figsize=(15, 15))
+        nx.draw(GMST, with_labels=True, alpha=0.7, font_size=9)
+        plt.show()
 
-    # Visualisation of Communities/Modularity - Run cells 135 and 137 before!
-    plt.figure(figsize=(25, 25))
-    values = [part.get(node) for node in G.nodes()]
-    clust = [i * 9000 for i in nx.clustering(G, weight='weight').values()]
-    nx.draw(G, pos=community_layout(G, part), font_size=8, node_size=clust, node_color=values,
-            width=np.power([d['weight'] for (u, v, d) in G.edges(data=True)], 2),
-            with_labels=True, labels=Convert(lineList), font_color='black', edge_color='grey', cmap=plt.cm.Spectral,
-            alpha=0.7)
-    plt.show()
+    # Visualisation of Communities/Modularity
+    if plot_figs:
+        plt.figure(figsize=(25, 25))
+        values = [part.get(node) for node in G.nodes()]
+        clust = [i * 9000 for i in nx.clustering(G, weight='weight').values()]
+        nx.draw(G, pos=community_layout(G, part), font_size=8, node_size=clust, node_color=values,
+                width=np.power([d['weight'] for (u, v, d) in G.edges(data=True)], 2),
+                with_labels=True, labels=Convert(lineList), font_color='black', edge_color='grey', cmap=plt.cm.Spectral,
+                alpha=0.7)
+        plt.show()
+    # save the graph information
+    measures["graph"] = G
 
-    return con_res, matrix, G
+    return measures
 
+
+# the function that goes through all subjects to calculate graph measures
+def subs_graph_meas(matrix, plot_figs):
+    meas_all = []
+
+    if len(matrix.shape) == 2:
+        matrix = np.reshape(matrix, (1, matrix.shape[0], matrix.shape[1]))
+
+    for cnt_sub in range(matrix.shape[0]):
+        this_matrix = matrix[cnt_sub, :, :]
+        measures = graph_meas(this_matrix, plot_figs)
+        meas_all.append(measures)
+
+    return meas_all
 
 # Function to transform our list of brain areas into a dictionary
 def Convert(lst):
@@ -424,93 +483,79 @@ def _position_nodes(g, partition, **kwargs):
 
     return pos
 # %% subject list
-list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
-# list_beh = ["AB02_2022-10-07_10h54.53.432.psydat",
-#             "AB04_2022-10-12_16h05.30.004.psydat",
-#             "AB05_2022-10-18_14h57.19.640.psydat",
-#             "AB06_2022-10-20_10h59.44.034.psydat",
-#             "AB08_2022-10-26_15h52.56.723.psydat",
-#             "AB10_2022-11-03_11h50.08.761.psydat",
-#             "AB11_2022-11-11_11h55.06.119.psydat"]
+# list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
+list_beh = ["AB02_2022-10-07_10h54.53.432.psydat",
+            "AB04_2022-10-12_16h05.30.004.psydat",
+            "AB05_2022-10-18_14h57.19.640.psydat",
+            "AB06_2022-10-20_10h59.44.034.psydat",
+            "AB08_2022-10-26_15h52.56.723.psydat",
+            "AB10_2022-11-03_11h50.08.761.psydat",
+            "AB11_2022-11-11_11h55.06.119.psydat"]
 # %% epochs list
-epoch_list = ["AB04_"]
-# epoch_list = ["AB02_",
-#               "AB04_",
-#               "AB05_",
-#               "AB06_",
-#               "AB08_",
-#               "AB10_",
-#               "AB11_"]
+# epoch_list = ["AB04_"]
+epoch_list = ["AB02_",
+              "AB04_",
+              "AB05_",
+              "AB06_",
+              "AB08_",
+              "AB10_",
+              "AB11_"]
 # %% declare variables
 sfreq = 1000.0
 fmin = 8
 fmax = 13
 con_methods = ['wpli']
-# %% loop through the subjects
-for this_sub in range(len(list_beh)):
-    # %% load the behavioral data
-    dat = fromFile("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + list_beh[this_sub])
+plot_figs_par = False
+# %% calculate graph measures
+mat_all_vis_train, avg_mat_all_vis_train = conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="vis_train", projected=True)
+meas_all_vis_train = subs_graph_meas(mat_all_vis_train, plot_figs=plot_figs_par)
 
-    # find number of all trials
-    numTrials = len(dat.entries)
-    block_mode = int(dat.extraInfo["block_mode"])
-    vis_even_idx = [i for i, d in enumerate(dat.entries) if "vis_even.thisRepN" in d]
-    test_even_idx = [i for i, d in enumerate(dat.entries) if "test_even.thisRepN" in d]
-    stim_even_idx = [i for i, d in enumerate(dat.entries) if "stim_even.thisRepN" in d]
-    vis_odd_idx = [i for i, d in enumerate(dat.entries) if "vis_odd.thisRepN" in d]
-    test_odd_idx = [i for i, d in enumerate(dat.entries) if "test_odd.thisRepN" in d]
-    stim_odd_idx = [i for i, d in enumerate(dat.entries) if "stim_odd.thisRepN" in d]
-    vis_stim_both_idx = [i for i, d in enumerate(dat.entries) if "vis_stim_both.thisRepN" in d]
+mat_all_vis_test, avg_mat_all_vis_test = conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="vis_test", projected=True)
+meas_all_vis_test = subs_graph_meas(mat_all_vis_test, plot_figs=plot_figs_par)
 
-    if block_mode == 1:
-        secondLoop = vis_even_idx
-        thirdLoop = test_even_idx
-        fourthLoop = stim_odd_idx
-        fifthLoop = test_odd_idx
-        sixthLoop = vis_stim_both_idx
-    elif block_mode == 2:
-        secondLoop = vis_odd_idx
-        thirdLoop = test_odd_idx
-        fourthLoop = stim_even_idx
-        fifthLoop = test_even_idx
-        sixthLoop = vis_stim_both_idx
-    elif block_mode == 3:
-        secondLoop = stim_even_idx
-        thirdLoop = test_even_idx
-        fourthLoop = vis_odd_idx
-        fifthLoop = test_odd_idx
-        sixthLoop = vis_stim_both_idx
-    elif block_mode == 4:
-        secondLoop = stim_odd_idx
-        thirdLoop = test_odd_idx
-        fourthLoop = vis_even_idx
-        fifthLoop = test_even_idx
-        sixthLoop = vis_stim_both_idx
+mat_all_stim_train, avg_mat_all_stim_train = conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="stim_train", projected=True)
+meas_all_stim_train = subs_graph_meas(mat_all_stim_train, plot_figs=plot_figs_par)
 
-    first_train_block = dat.entries[np.min(secondLoop): np.max(secondLoop) + 1]
-    first_test_block = dat.entries[np.min(thirdLoop): np.max(thirdLoop) + 1]
-    second_train_block = dat.entries[np.min(fourthLoop): np.max(fourthLoop) + 1]
-    second_test_block = dat.entries[np.min(fifthLoop): np.max(fifthLoop) + 1]
-    third_train_block = dat.entries[np.min(sixthLoop): np.max(sixthLoop) + 1]
+mat_all_stim_test, avg_mat_all_stim_test = conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="stim_test", projected=True)
+meas_all_stim_test = subs_graph_meas(mat_all_stim_test, plot_figs=plot_figs_par)
 
-    # %% load the epochs
-    epochs_first_train_clean = mne.read_epochs("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epoch_list[this_sub] + 'epochs_first_train_clean' + '-epo.fif', preload=False)
-    epochs_first_test_clean = mne.read_epochs("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epoch_list[this_sub] + 'epochs_first_test_clean' + '-epo.fif', preload=False)
-    epochs_second_train_clean = mne.read_epochs("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epoch_list[this_sub] + 'epochs_second_train_clean' + '-epo.fif', preload=False)
-    epochs_second_test_clean = mne.read_epochs("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epoch_list[this_sub] + 'epochs_second_test_clean' + '-epo.fif', preload=False)
-    epochs_third_train_clean = mne.read_epochs("/Users/mohsen/Documents/GitHub/effort_sensory_analysis/" + epoch_list[this_sub] + 'epochs_third_train_clean' + '-epo.fif', preload=False)
+mat_all_both_train, avg_mat_all_both_train = conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="both_train", projected=True)
+meas_all_both_train = subs_graph_meas(mat_all_both_train, plot_figs=plot_figs_par)
+# %% do statistics
+meas_par = meas_all_vis_train
+idx_area = [44, 45, 48, 49]
+den_all_15 = []
+den_all_20 = []
+mean_degree_vec = []
+avg_shortest_path_vec = []
+num_partition_vec = []
+avg_clustering_vec = []
+avg_short_area_vec = []
+strength_vec = []
+norm_strength_vec = []
+for cnt_sub in range(len(list_beh)):
+    den_all_15.append(meas_par[cnt_sub]["density"]["> 0.15"])
+    den_all_20.append(meas_par[cnt_sub]["density"]["> 0.2"])
+    mean_degree_vec.append(meas_par[cnt_sub]["mean_degree"])
+    avg_shortest_path_vec.append(meas_par[cnt_sub]["average_shortest_path_length"])
+    num_partition_vec.append(meas_par[cnt_sub]["num_partitions"])
+    avg_clustering_vec.append(meas_par[cnt_sub]["average_clustering"])
+    b = []
+    for this_area in idx_area:
+        a = []
+        for other_area in idx_area:
+            a.append(meas_par[cnt_sub]["shortest_path_length"][this_area][1][other_area])
+        b.append(a)
+    avg_short_area_vec.append(b)
+    st = nx.get_node_attributes(meas_par[cnt_sub]["graph"], "strength")
+    norm_st = nx.get_node_attributes(meas_par[cnt_sub]["graph"], "strengthnorm")
+    c = []
+    d = []
+    e = [] # for closeness measure
+    for this_area in idx_area:
+        c.append(st[this_area])
+        d.append(norm_st[this_area])
+    strength_vec.append(c)
+    norm_strength_vec.append(d)
 
-    # %% separate the epochs based on autoreject
-    # idx_good_psych = [idx for idx, i in enumerate(epochs_psych_clean.drop_log) if not i]
-    idx_good_first_train = [idx for idx, i in enumerate(epochs_first_train_clean.drop_log) if not i]
-    idx_good_first_test = [idx for idx, i in enumerate(epochs_first_test_clean.drop_log) if not i]
-    idx_good_second_train = [idx for idx, i in enumerate(epochs_second_train_clean.drop_log) if not i]
-    idx_good_second_test = [idx for idx, i in enumerate(epochs_second_test_clean.drop_log) if not i]
-    idx_good_third_train = [idx for idx, i in enumerate(epochs_third_train_clean.drop_log) if not i]
-    # %% creating the connectivity matrix
-    con_res_first_train, matrix_first_train, G_first_train = conn_cal(epoch_list[this_sub], "first_train", projected=True)
-    con_res_second_train, matrix_second_train, G_second_train = conn_cal(epoch_list[this_sub], "second_train", projected=True)
-    con_res_third_train, matrix_third_train, G_third_train = conn_cal(epoch_list[this_sub], "third_train", projected=True)
-    con_res_first_test, matrix_first_test, G_first_test = conn_cal(epoch_list[this_sub], "first_test", projected=True)
-    con_res_second_test, matrix_second_test, G_second_test = conn_cal(epoch_list[this_sub], "second_test", projected=True)
 
