@@ -307,6 +307,14 @@ def graph_meas(matrix, plot_figs):
     # Add as attribute to nodes
     nx.set_node_attributes(G, clustering, 'cc')
 
+    # Small world
+    sws = nx.sigma(G)
+    swo = nx.sigma(G)
+    print("sws")
+    print(sws)
+    print(swo)
+    measures["sws"] = sws
+    measures["swo"] = swo
     # Visualise values directly
     print(clustering)
 
@@ -1009,23 +1017,23 @@ def _position_nodes(g, partition, **kwargs):
 
     return pos
 # %% subject list
-# list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
-list_beh = ["AB02_2022-10-07_10h54.53.432.psydat",
-            "AB04_2022-10-12_16h05.30.004.psydat",
-            "AB05_2022-10-18_14h57.19.640.psydat",
-            "AB06_2022-10-20_10h59.44.034.psydat",
-            "AB08_2022-10-26_15h52.56.723.psydat",
-            "AB10_2022-11-03_11h50.08.761.psydat",
-            "AB11_2022-11-11_11h55.06.119.psydat"]
+list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
+# list_beh = ["AB02_2022-10-07_10h54.53.432.psydat",
+#             "AB04_2022-10-12_16h05.30.004.psydat",
+#             "AB05_2022-10-18_14h57.19.640.psydat",
+#             "AB06_2022-10-20_10h59.44.034.psydat",
+#             "AB08_2022-10-26_15h52.56.723.psydat",
+#             "AB10_2022-11-03_11h50.08.761.psydat",
+#             "AB11_2022-11-11_11h55.06.119.psydat"]
 # %% epochs list
-# epoch_list = ["AB04_"]
-epoch_list = ["AB02_",
-              "AB04_",
-              "AB05_",
-              "AB06_",
-              "AB08_",
-              "AB10_",
-              "AB11_"]
+epoch_list = ["AB04_"]
+# epoch_list = ["AB02_",
+#               "AB04_",
+#               "AB05_",
+#               "AB06_",
+#               "AB08_",
+#               "AB10_",
+#               "AB11_"]
 # %% declare variables
 sfreq = 1000.0
 fmin = 8
