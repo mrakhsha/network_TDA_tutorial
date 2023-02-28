@@ -19,6 +19,7 @@ import warnings
 warnings.filterwarnings('ignore')
 from scipy.stats import ranksums
 from scipy.stats import wilcoxon
+import pickle
 # %% functions
 # the function to calculate connectivity matrix
 def conn_cal(epochs, beh, exp_cond, projected):
@@ -1017,23 +1018,23 @@ def _position_nodes(g, partition, **kwargs):
 
     return pos
 # %% subject list
-list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
-# list_beh = ["AB02_2022-10-07_10h54.53.432.psydat",
-#             "AB04_2022-10-12_16h05.30.004.psydat",
-#             "AB05_2022-10-18_14h57.19.640.psydat",
-#             "AB06_2022-10-20_10h59.44.034.psydat",
-#             "AB08_2022-10-26_15h52.56.723.psydat",
-#             "AB10_2022-11-03_11h50.08.761.psydat",
-#             "AB11_2022-11-11_11h55.06.119.psydat"]
+# list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
+list_beh = ["AB02_2022-10-07_10h54.53.432.psydat",
+            "AB04_2022-10-12_16h05.30.004.psydat",
+            "AB05_2022-10-18_14h57.19.640.psydat",
+            "AB06_2022-10-20_10h59.44.034.psydat",
+            "AB08_2022-10-26_15h52.56.723.psydat",
+            "AB10_2022-11-03_11h50.08.761.psydat",
+            "AB11_2022-11-11_11h55.06.119.psydat"]
 # %% epochs list
-epoch_list = ["AB04_"]
-# epoch_list = ["AB02_",
-#               "AB04_",
-#               "AB05_",
-#               "AB06_",
-#               "AB08_",
-#               "AB10_",
-#               "AB11_"]
+# epoch_list = ["AB04_"]
+epoch_list = ["AB02_",
+              "AB04_",
+              "AB05_",
+              "AB06_",
+              "AB08_",
+              "AB10_",
+              "AB11_"]
 # %% declare variables
 sfreq = 1000.0
 fmin = 8
@@ -1072,5 +1073,22 @@ all_data = [data_vis_train, data_vis_test, data_stim_train, data_stim_test, data
 
 all_stats = stats_net_measures(all_data)
 
+with open('small_world_vis_train.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+    pickle.dump(meas_all_vis_train, f, pickle.HIGHEST_PROTOCOL)
 
+with open('small_world_vis_test.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+    pickle.dump(meas_all_vis_test, f, pickle.HIGHEST_PROTOCOL)
 
+with open('small_world_stim_train.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+    pickle.dump(meas_all_stim_train, f, pickle.HIGHEST_PROTOCOL)
+
+with open('small_world_stim_test.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+    pickle.dump(meas_all_stim_test, f, pickle.HIGHEST_PROTOCOL)
+
+with open('small_world_both_train.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+    pickle.dump(meas_all_both_train, f, pickle.HIGHEST_PROTOCOL)
