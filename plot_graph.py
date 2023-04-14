@@ -20,20 +20,7 @@ warnings.filterwarnings('ignore')
 from scipy.stats import ranksums
 from scipy.stats import wilcoxon
 import pickle
-from network_analyses_main import conn_cal
-# %% functions
-# the function calculates graph theory mesures
-def make_graph(matrix):
-    # Absolutise for further user
-    matrix = abs(matrix)
-
-    # Creating a graph
-    G = nx.from_numpy_matrix(matrix)
-
-    # Removing self-loops
-    G.remove_edges_from(list(nx.selfloop_edges(G)))
-
-    return G
+import function_network as fn
 
 # %% subject list
 list_beh = ["AB04_2022-10-12_16h05.30.004.psydat"]
@@ -60,6 +47,23 @@ fmax = 13
 con_methods = ['wpli']
 plot_figs_par = False
 # %% calculate graph measures
-mat_all_vis_train, avg_mat_all_vis_train = conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="vis_train", projected=True)
-graph_all_vis_train = make_graph(mat_all_vis_train)
+mat_all_vis_train, avg_mat_all_vis_train = fn.conn_cal(epochs=epoch_list, beh=list_beh, exp_cond="vis_train",
+                                                       projected=True, con_methods=con_methods, sfreq=sfreq, fmin=fmin, fmax=fmax)
+graph_all_vis_train = fn.make_graph(avg_mat_all_vis_train)
 
+fig = plt.figure("Degree of a random graph", figsize=(8, 8))
+# Create a gridspec for adding subplots of different sizes
+axgrid = fig.add_gridspec(5, 4)
+
+ax0 = fig.add_subplot(axgrid[0:3, :])
+Gcc = graph_all_vis_train.subgraph(sorted(nx.connected_components(graph_all_vis_train), key=len, reverse=True)[0])
+pos = nx.spring_layout(Gcc, seed=10396953)
+nx.draw_networkx_nodes(Gcc, pos, ax=ax0, node_size=20)
+nx.draw_networkx_edges(Gcc, pos, ax=ax0, alpha=0.4)
+ax0.set_title("Connected components of G")
+ax0.set_axis_off()
+plt.show()
+
+deg_weight = nx.degree(graph_all_vis_train, weight="weight")
+
+deg_weight[1]
